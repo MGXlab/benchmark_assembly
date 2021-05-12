@@ -1,0 +1,14 @@
+# REQUIRED
+# Path to a tab separated samplesheet that contains a header
+# 'sample\tR1\tR2
+samples:
+
+# Interval in seconds to query running processes
+# Defaults to 300 (every 5 min)
+ps_interval: 60
+
+# REQUIRED
+# Path to CAT db, as output from CAT prepare
+# see https://github.com/dutilh/CAT#downloading-the-database-files
+CAT_DB: 
+CAT_TAX: 
