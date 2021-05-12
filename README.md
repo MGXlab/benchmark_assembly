@@ -99,4 +99,8 @@ sampleX/
 The `logs` dir has runtime logs (captured `stdout` and `stderr` where 
 appropriate) per rule.
 
+# Report
 
+```
+$ snakemake --report report/home.html
+```
