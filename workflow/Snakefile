@@ -1,6 +1,10 @@
 import pandas as pd
+import os
 
 configfile: "config/config.yaml"
+report: "report/workflow.rst"
+
+root_dir = os.getcwd()
 
 samples_df = pd.read_csv(
         config["samples"],
@@ -14,20 +18,33 @@ def get_fastqs(wc):
     r2 = samples_df.loc[samples_df['sample_id'] == wc.sample]['R2'].values[0]
     return list((r1,r2))
 
+def get_assembly(wc):
+    sample=wc.sample
+    if wc.assembler=='metaspades':
+        return os.path.join(root_dir, f"results/{sample}/assembly/metaspades/scaffolds.fasta")
+    else:
+        return os.path.join(root_dir, f"results/{sample}/assembly/megahit/final.contigs.fa")
+
 rule all:
     input:
         expand([
-            "results/BGI/assembly/{sample}/metaspades/scaffolds.fasta",
-            "results/BGI/assembly/{sample}/metaspades.time.txt",
-            "results/BGI/assembly/{sample}/metaspades.mem.txt",
-            "results/BGI/assembly/{sample}/megahit/final.contigs.fa",
-            "results/BGI/assembly/{sample}/megahit.time.txt",
-            "results/BGI/assembly/{sample}/megahit.mem.txt",
-            "results/BGI/assembly/{sample}/quast_metaspades/report.tsv",
-            "results/BGI/assembly/{sample}/quast_megahit/report.tsv",
-            "results/BGI/assembly/{sample}/metaspades.filtered.fa",
-            "results/BGI/assembly/{sample}/megahit.filtered.fa",
-            "results/BGI/CAT/{sample}/{assembler}/{sample}.summary.txt"
+            # Assembly
+            "results/{sample}/assembly/metaspades/scaffolds.fasta",
+            "results/{sample}/assembly/megahit/final.contigs.fa",
+            "results/{sample}/assembly/{assembler}.time.txt",
+            "results/{sample}/assembly/{assembler}.mem.txt",
+            "results/{sample}/assembly/quast_{assembler}/report.tsv",
+            # Mapping
+            "results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+            "results/{sample}/mapping/{sample}_{assembler}.bam",
+            "results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
+            "results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+            # CAT
+            "results/{sample}/assembly/{assembler}.filtered.fa",
+            "results/{sample}/CAT/{assembler}/{sample}.summary.txt",
+            # Reporting
+            "report/runtime_stats/{sample}_usage.html",
+            "report/results/multiqc_report.html"
             ],
             sample=SAMPLES,
             assembler=['metaspades', 'megahit']
@@ -37,9 +54,9 @@ rule metaspades:
     input:
         fqs = get_fastqs
     output:
-        scaffolds_fasta = "results/BGI/assembly/{sample}/metaspades/scaffolds.fasta",
-        time_txt = "results/BGI/assembly/{sample}/metaspades.time.txt",
-        usage_txt = "results/BGI/assembly/{sample}/metaspades.mem.txt",
+        scaffolds_fasta = "results/{sample}/assembly/metaspades/scaffolds.fasta",
+        time_txt = "results/{sample}/assembly/metaspades.time.txt",
+        usage_txt = "results/{sample}/assembly/metaspades.mem.txt",
     log: 
         stdout = "results/logs/{sample}.metaspades.stdout",
         stderr = "results/logs/{sample}.metaspades.stderr"
@@ -49,7 +66,7 @@ rule metaspades:
         mem_mb=498*1000
     params:
         max_mem = 498,
-        outdir = "results/BGI/assembly/{sample}/metaspades",
+        outdir = "results/{sample}/assembly/metaspades",
         ps_interval = config.get('ps_interval', 300)
     shell:
         '''
@@ -72,9 +89,9 @@ rule megahit:
     input:
         fqs = get_fastqs
     output:
-        contigs_fasta = "results/BGI/assembly/{sample}/megahit/final.contigs.fa",
-        time_txt = "results/BGI/assembly/{sample}/megahit.time.txt",
-        usage_txt = "results/BGI/assembly/{sample}/megahit.mem.txt"
+        contigs_fasta = "results/{sample}/assembly/megahit/final.contigs.fa",
+        time_txt = "results/{sample}/assembly/megahit.time.txt",
+        usage_txt = "results/{sample}/assembly/megahit.mem.txt"
     log: 
         stdout = "results/logs/{sample}.megahit.stdout",
         stderr = "results/logs/{sample}.megahit.stderr"
@@ -84,7 +101,7 @@ rule megahit:
         mem_mb=498*1000
     params:
         mem = 0.98,
-        outdir = "results/BGI/assembly/{sample}/megahit",
+        outdir = "results/{sample}/assembly/megahit",
         prefix = "final",
         ps_interval = config.get('ps_interval', 300)
     shell:
@@ -106,106 +123,170 @@ rule megahit:
         rm -rvf {params.outdir}_tmp/intermediate_contigs 1>>{log.stdout}
         '''
 
-rule quast_metaspades:
+rule quast:
     input:
-        scaffolds=rules.metaspades.output.scaffolds_fasta
+        rules.metaspades.output.scaffolds_fasta,
+        rules.megahit.output.contigs_fasta,
     output:
-        report_tsv="results/BGI/assembly/{sample}/quast_metaspades/report.tsv"
+        report_tsv="results/{sample}/assembly/quast_{assembler}/report.tsv"
     conda: 
         "envs/quast.yaml"
     log:
-        stdout="results/BGI/logs/{sample}.quast_metaspades.stdout",
-        stderr="results/BGI/logs/{sample}.quast_metaspades.stderr"
+        stdout="results/logs/{sample}.quast_{assembler}.stdout",
+        stderr="results/logs/{sample}.quast_{assembler}.stderr"
     threads: 16
-    benchmark: "results/BGI/benchmarks/{sample}.quast_metaspades.tsv"
+    benchmark: "results/benchmarks/{sample}.quast_{assembler}.tsv"
     params:
-        outdir="results/BGI/assembly/{sample}/quast_metaspades"
+        outdir="results/{sample}/assembly/quast_{assembler}",
+        assembly=get_assembly
     shell:
         """
         quast -t {threads} -o {params.outdir} \
         --no-html --no-icarus \
-        {input.scaffolds} 1>{log.stdout} 2>{log.stderr}
+        {params.assembly} 1>{log.stdout} 2>{log.stderr}
         """
 
-rule quast_megahit:
+rule bwa_index:
     input:
-        contigs=rules.megahit.output.contigs_fasta
+        rules.metaspades.output.scaffolds_fasta,
+        rules.megahit.output.contigs_fasta,
     output:
-        report_tsv="results/BGI/assembly/{sample}/quast_megahit/report.tsv"
-    conda: 
-        "envs/quast.yaml"
+        linked_file="results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        index_files = multiext("results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+                ".amb",".ann", ".bwt", ".pac", ".sa")
+    conda:
+        "envs/mapping.yaml"
     log:
-        stdout="results/BGI/logs/{sample}.quast_megahit.stdout",
-        stderr="results/BGI/logs/{sample}.quast_megahit.stderr"
-    threads: 16
+        stdout="results/logs/{sample}.bwa_index_{assembler}.stdout",
+        stderr="results/logs/{sample}.bwa_index_{assembler}.stderr"
+    params:
+        assembly=get_assembly
+    benchmark:
+        "results/benchmarks/{sample}.bwa_index_{assembler}.tsv"
+    shell:
+        """
+        ln -s {params.assembly} {output.linked_file} && \
+        bwa index {output.linked_file} 1>{log.stdout} 2>{log.stderr}
+        """
+
+
+rule bwa_mem:
+    input:
+        fqs=get_fastqs,
+        index_files = rules.bwa_index.output.index_files
+    output:
+        bam="results/{sample}/mapping/{sample}_{assembler}.bam",
+        bam_index="results/{sample}/mapping/{sample}_{assembler}.bam.csi"
+    conda:
+        "envs/mapping.yaml"
+    log:
+        bwa_mem_stderr="results/logs/{sample}.bwa_mem_{assembler}.stderr",
+        samtools_stderr="results/logs/{sample}.samtools_sort_{assembler}.stderr"
+    threads: 16 
+    params:
+        index="results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        read_group=r"'@RG\tID:{sample}\tSM:{sample}'",
+        sort_prefix="results/{sample}/mapping/{sample}_{assembler}.tmp"
+    benchmark:
+        "results/benchmarks/{sample}.bwa_mem_{assembler}.tsv"
+    shell:
+        """
+        bwa mem -t {threads} \
+        -R {params.read_group} \
+        {params.index} \
+        {input.fqs[0]} {input.fqs[1]} 2>{log.bwa_mem_stderr} \
+        | samtools sort \
+        --threads {threads} \
+        -T {params.sort_prefix} \
+        -O bam \
+        --write-index \
+        -o {output.bam} 2>{log.samtools_stderr}
+        """
+
+rule samtools_flagstat:
+    input:
+        bam=rules.bwa_mem.output.bam,
+        bam_index=rules.bwa_mem.output.bam_index
+    output:
+        flagstat="results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt"
+    conda:
+        "envs/mapping.yaml"
+    log:
+        stderr="results/logs/{sample}.samtools_flagstat_{assembler}.stderr"
+    threads: 8
+    benchmark:
+        "results/benchmarks/{sample}.samtools_flagstat_{assembler}.tsv"
+    shell:
+        """
+        samtools flagstat \
+        --threads {threads} \
+        {input.bam} 1>{output.flagstat} 2>{log.stderr}
+        """
+
+rule samtools_stats:
+    input:
+        bam=rules.bwa_mem.output.bam,
+        bam_index=rules.bwa_mem.output.bam_index
+    output:
+        stats="results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt"
+    conda:
+        "envs/mapping.yaml"
+    log:
+        stderr="results/logs/{sample}.samtools_stats_{assembler}.stderr"
+    threads: 8
+    benchmark:
+        "results/benchmarks/{sample}.samtools_stats_{assembler}.tsv"
+    shell:
+        """
+        samtools stats \
+        --threads {threads} \
+        {input.bam} 1>{output.stats} 2>{log.stderr}
+        """
+
+
+rule size_filter:
+    input:
+        rules.metaspades.output.scaffolds_fasta,
+        rules.megahit.output.contigs_fasta,
+    output:
+        filtered_fasta="results/{sample}/assembly/{assembler}.filtered.fa"
+    conda:
+        "envs/assembly.yaml"
+    log:
+        stderr="results/logs/{sample}.filter_{assembler}.stderr"
     benchmark: 
-        "results/BGI/benchmarks/{sample}.quast_megahit.tsv"
+        "results/benchmarks/{sample}.filter_{assembler}.tsv"
     params:
-        outdir="results/BGI/assembly/{sample}/quast_megahit"
-    shell:
-        """
-        quast -t {threads} -o {params.outdir} \
-        --no-html --no-icarus \
-        {input.contigs} 1>{log.stdout} 2>{log.stderr}
-        """
-
-rule filter_metaspades:
-    input:
-        scaffolds=rules.metaspades.output.scaffolds_fasta
-    output:
-        filtered_fasta="results/BGI/assembly/{sample}/metaspades.filtered.fa"
-    conda:
-        "envs/assembly.yaml"
-    log:
-        stderr="results/logs/{sample}.filter_metaspades.stderr"
-    benchmark: "results/BGI/benchmarks/{sample}.filter_metaspades.tsv"
-    params:
-        min_length=1500
+        min_length=1500,
+        assembly=get_assembly
     shell:
         """
         seqtk seq \
         -L {params.min_length} \
-        {input.scaffolds} > {output.filtered_fasta} 2>{log.stderr}
+        {params.assembly} > {output.filtered_fasta} 2>{log.stderr}
         """
 
-rule filter_megahit:
+rule cat_contigs:
     input:
-        contigs=rules.megahit.output.contigs_fasta
-    output:
-        filtered_fasta="results/BGI/assembly/{sample}/megahit.filtered.fa"
-    conda:
-        "envs/assembly.yaml"
-    log:
-        stderr="results/logs/{sample}.filter_megahit.stderr"
-    benchmark: "results/BGI/benchmarks/{sample}.filter_megahit.tsv"
-    params:
-        min_length=1500
-    shell:
-        """
-        seqtk seq \
-        -L {params.min_length} \
-        {input.contigs} > {output.filtered_fasta} 2>{log.stderr}
-        """
-
-rule cat_contigs_metaspades:
-    input:
-        scaffolds=rules.filter_metaspades.output.filtered_fasta,
+        scaffolds=rules.size_filter.output.filtered_fasta,
         cat_db=config["CAT_DB"],
         cat_taxonomy=config["CAT_TAX"]
     output:
-        cont2class="results/BGI/CAT/{sample}/metaspades/{sample}.contig2classification.txt",
+        cont2class="results/{sample}/CAT/{assembler}/{sample}.contig2classification.txt",
     conda:
         "envs/cat.yaml"
     log:
-        stdout="results/logs/{sample}.cat_contigs_metaspades.stdout",
-        stderr="results/logs/{sample}.cat_contigs_metaspades.stderr"
+        stdout="results/logs/{sample}.cat_contigs_{assembler}.stdout",
+        stderr="results/logs/{sample}.cat_contigs_{assembler}.stderr"
     benchmark:
-        "results/BGI/benchmarks/{sample}.cat_contigs_metaspades.tsv"
-    threads: 32
+        "results/benchmarks/{sample}.cat_contigs_{assembler}.tsv"
+    threads: 16
     params:
-        out_prefix="results/BGI/{sample}/metaspades/{sample}"
+        outdir="results/{sample}/CAT/{assembler}",
+        out_prefix="results/{sample}/CAT/{assembler}/{sample}"
     shell:
         """
+        mkdir -p {params.outdir}
         CAT contigs \
         -c {input.scaffolds} \
         --I_know_what_Im_doing \
@@ -217,43 +298,42 @@ rule cat_contigs_metaspades:
         -o {params.out_prefix} 1>{log.stdout} 2>{log.stderr}
         """
 
-rule cat_names_metaspades:
+rule cat_names:
     input:
-        cont2class=rules.cat_contigs_metaspades.output.cont2class,
+        cont2class=rules.cat_contigs.output.cont2class,
         cat_taxonomy=config["CAT_TAX"]
     output:
-        classwnames="results/BGI/CAT/{sample}/metaspades/{sample}.official_names.txt"
+        classwnames="results/{sample}/CAT/{assembler}/{sample}.official_names.txt"
     conda:
         "envs/cat.yaml"
     log:
-        stdout="results/logs/{sample}.cat_names_metaspades.stdout",
-        stderr="results/logs/{sample}.cat_names_metaspades.stderr"
+        stdout="results/logs/{sample}.cat_names_{assembler}.stdout",
+        stderr="results/logs/{sample}.cat_names_{assembler}.stderr"
     benchmark:
-        "results/BGI/benchmarks/{sample}.cat_names_metaspades.tsv"
+        "results/benchmarks/{sample}.cat_names_{assembler}.tsv"
     threads: 1
     shell:
         """
         CAT add_names \
-        --only-official \
+        --only_official \
         -t {input.cat_taxonomy} \
         -i {input.cont2class} \
         -o {output.classwnames} 1>{log.stdout} 2>{log.stderr}
         """
 
-
-rule cat_summary_metaspades:
+rule cat_summary:
     input:
-        scaffolds=rules.filter_metaspades.output.filtered_fasta,
-        classwnames=rules.cat_names_metaspades.output.classwnames
+        scaffolds=rules.size_filter.output.filtered_fasta,
+        classwnames=rules.cat_names.output.classwnames
     output:
-        summary="results/BGI/CAT/{sample}/metaspades/{sample}.summary.txt"
+        summary="results/{sample}/CAT/{assembler}/{sample}.summary.txt"
     conda:
         "envs/cat.yaml"
     log:
-        stdout="results/logs/{sample}.cat_summary_metaspades.stdout",
-        stderr="results/logs/{sample}.cat_summary_metaspades.stderr"
+        stdout="results/logs/{sample}.cat_summary_{assembler}.stdout",
+        stderr="results/logs/{sample}.cat_summary_{assembler}.stderr"
     benchmark:
-        "results/BGI/benchmarks/{sample}.cat_summary_metaspades.tsv"
+        "results/benchmarks/{sample}.cat_summary_{assembler}.tsv"
     threads: 1
     shell:
         """
@@ -263,78 +343,56 @@ rule cat_summary_metaspades:
         -o {output.summary} 1>{log.stdout} 2>{log.stderr}
         """
 
-rule cat_contigs_megahit:
+rule plot_runstats:
     input:
-        scaffolds=rules.filter_megahit.output.filtered_fasta,
-        cat_db=config["CAT_DB"],
-        cat_taxonomy=config["CAT_TAX"]
+        metaspades_time=rules.metaspades.output.time_txt,
+        metaspades_usage=rules.metaspades.output.usage_txt,
+        megahit_time=rules.megahit.output.time_txt,
+        megahit_usage=rules.megahit.output.usage_txt
     output:
-        cont2class="results/BGI/CAT/{sample}/megahit/{sample}.contig2classification.txt",
+        report("report/runtime_stats/{sample}_usage.html",
+                caption="report/runtime_usage.rst",
+                category="Runtime",
+                subcategory="{sample}"),
     conda:
-        "envs/cat.yaml"
-    log:
-        stdout="results/logs/{sample}.cat_contigs_megahit.stdout",
-        stderr="results/logs/{sample}.cat_contigs_megahit.stderr"
-    benchmark:
-        "results/BGI/benchmarks/{sample}.cat_contigs_megahit.tsv"
-    threads: 32
+        "envs/plot.yaml"
+    threads: 1
     params:
-        out_prefix="results/BGI/{sample}/megahit/{sample}"
+        data_dir="results/{sample}/assembly",
+        scrpt=srcdir("scripts/plot_assembly_stats.py")
     shell:
         """
-        CAT contigs \
-        -c {input.scaffolds} \
-        --I_know_what_Im_doing \
-        --top 11 \
-        -r 10 \
-        --nproc {threads} \
-        -d {input.cat_db} \
-        -t {input.cat_taxonomy} \
-        -o {params.out_prefix} 1>{log.stdout} 2>{log.stderr}
+        python {params.scrpt} -d {params.data_dir} -o {output}
         """
 
-rule cat_names_megahit:
+
+rule multiqc_report:
     input:
-        cont2class=rules.cat_contigs_megahit.output.cont2class,
-        cat_taxonomy=config["CAT_TAX"]
+        expand([
+        "results/{sample}/assembly/quast_{assembler}/report.tsv",
+        "results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
+        "results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+        ], 
+        sample=SAMPLES, assembler=['megahit', 'metaspades']
+        )
     output:
-        classwnames="results/BGI/CAT/{sample}/megahit/{sample}.official_names.txt"
-    conda:
-        "envs/cat.yaml"
+        report("report/results/multiqc_report.html",
+                caption="report/results.rst",
+                category="Results"
+                ),
+        multiqc_zip="report/results/multiqc_data.zip"
     log:
-        stdout="results/logs/{sample}.cat_names_megahit.stdout",
-        stderr="results/logs/{sample}.cat_names_megahit.stderr"
-    benchmark:
-        "results/BGI/benchmarks/{sample}.cat_names_megahit.tsv"
-    threads: 1
+        stderr="results/logs/multiqc_report.stderr",
+        stdout="results/logs/mutiqc_report.stdout"
+    conda:
+        "envs/qc.yaml"
+    params:
+        output_dir="report/results"
+
     shell:
         """
-        CAT add_names \
-        --only-official \
-        -t {input.cat_taxonomy} \
-        -i {input.cont2class} \
-        -o {output.classwnames} 1>{log.stdout} 2>{log.stderr}
-        """
-
-
-rule cat_summary_megahit:
-    input:
-        scaffolds=rules.filter_megahit.output.filtered_fasta,
-        classwnames=rules.cat_names_megahit.output.classwnames
-    output:
-        summary="results/BGI/CAT/{sample}/megahit/{sample}.summary.txt"
-    conda:
-        "envs/cat.yaml"
-    log:
-        stdout="results/logs/{sample}.cat_summary_megahit.stdout",
-        stderr="results/logs/{sample}.cat_summary_megahit.stderr"
-    benchmark:
-        "results/BGI/benchmarks/{sample}.cat_summary_megahit.tsv"
-    threads: 1
-    shell:
-        """
-        CAT summarise \
-        -c {input.scaffolds} \
-        -i {input.classwnames} \
-        -o {output.summary} 1>{log.stdout} 2>{log.stderr}
+        mkdir -p {params.output_dir}
+        multiqc -f -dd 3 -z -o {params.output_dir} \
+        -m fastqc -m quast -m samtools \
+        --no-ansi results 
         """
