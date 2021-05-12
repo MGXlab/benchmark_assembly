@@ -1,0 +1,5 @@
+# All internal snakemake
+.snakemake
+
+# All notebook stuff
+*.ipynb_checkpoints/*
