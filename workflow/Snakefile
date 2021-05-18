@@ -44,7 +44,12 @@ rule all:
             "results/{sample}/CAT/{assembler}/{sample}.summary.txt",
             # Reporting
             "report/runtime_stats/{sample}_usage.html",
-            "report/results/multiqc_report.html"
+            "report/results/multiqc_report.html",
+            "results/benchmarks/aggregated/all.tsv",
+            "results/benchmarks/aggregated/s.svg",
+            "results/benchmarks/aggregated/io_out.svg",
+            "results/benchmarks/aggregated/max_rss.svg",
+            "results/benchmarks/aggregated/cpu_time.svg",
             ],
             sample=SAMPLES,
             assembler=['metaspades', 'megahit']
@@ -352,7 +357,7 @@ rule plot_runstats:
     output:
         report("report/runtime_stats/{sample}_usage.html",
                 caption="report/runtime_usage.rst",
-                category="Runtime",
+                category="Assembly Benchmarks",
                 subcategory="{sample}"),
     conda:
         "envs/plot.yaml"
@@ -372,6 +377,7 @@ rule multiqc_report:
         "results/{sample}/assembly/quast_{assembler}/report.tsv",
         "results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
         "results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+        "results/{sample}/CAT/{sample}/{sample}.summary.txt"
         ], 
         sample=SAMPLES, assembler=['megahit', 'metaspades']
         )
@@ -395,4 +401,54 @@ rule multiqc_report:
         multiqc -f -dd 3 -z -o {params.output_dir} \
         -m fastqc -m quast -m samtools \
         --no-ansi results 
+        """
+
+rule concatenate_benchmarks:
+    input:
+       rules.multiqc_report.output.multiqc_zip
+    output:
+        benchmarks_tsv = "results/benchmarks/aggregated/all.tsv"
+    conda:
+        "envs/plot.yaml"
+    params:
+        benchmarks_dir = "results/benchmarks",
+        scrpt = srcdir("scripts/concatenate_benchmarks.py"),
+        BGI_meta = "company BGI C",
+        BC_meta = "company BC bc_"
+    shell:
+        """
+        python {params.scrpt} -i {params.benchmarks_dir} \
+            -o {output.benchmarks_tsv} -m {params.BGI_meta} \
+            -m {params.BC_meta}
+        """
+
+rule plot_benchmarks:
+    input:
+        rules.concatenate_benchmarks.output.benchmarks_tsv
+    output:
+        report("results/benchmarks/aggregated/s.svg",
+                caption = "report/seconds.rst",
+                category="Aggregated Benchmarks",
+                ),
+        report("results/benchmarks/aggregated/io_out.svg",
+                caption="report/io.rst",
+                category="Aggregated Benchmarks",
+                ),
+        report("results/benchmarks/aggregated/max_rss.svg",
+                caption="report/max_rss.rst",
+                category="Aggregated Benchmarks",
+                ),
+        report("results/benchmarks/aggregated/cpu_time.svg",
+                caption="report/cpu_time.rst",
+                category="Aggregated Benchmarks",
+                )
+    conda:
+        "envs/plot.yaml"
+    params:
+        aggregated_dir = "results/benchmarks/aggregated",
+        scrpt = srcdir("scripts/plot_benchmarks.py")
+    shell:
+        """
+        python {params.scrpt} -i {input} \
+                -o {params.aggregated_dir}
         """
