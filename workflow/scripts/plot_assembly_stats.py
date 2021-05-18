@@ -53,7 +53,7 @@ colors={
         
 
 def get_sample_id(data_dir):
-    sample_id = data_dir.parent.parent.name
+    sample_id = data_dir.parent.name
     return sample_id
 
 
