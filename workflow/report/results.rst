@@ -1,18 +1,14 @@
-`MultiQC <https://multiqc.info/>`_ is used to report stats based on 
+`MultiQC <https://multiqc.info/>`_ is used to report stats based on:
 
-* FastQC: Overall raw read quality statistics
+FastQC
+    Overall raw read quality statistics. This is run manually outside of 
+    the pipeline. No trimming/adapter removal is performed for now.
 
-.. note:: 
-   This is run manually outside of the pipeline.
-   No trimming is performed
+Quast 
+    Assembly statistics
 
-* Quast: Assembly statistics
-* Mapping quality 
-  * Based on ``samtools stats`` and ``samtools flagstat``
+Mapping quality
+    Based on ``samtools stats`` and ``flagstat``
 
-.. raw:: html
-
-    <a href=results/multiqc_report.html>
-    Click here to view it
-    </a
+`Click here to open in browser <results/multiqc_report.html>`_
 
