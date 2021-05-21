@@ -272,7 +272,8 @@ rule samtools_stats:
 
 rule size_filter:
     input:
-        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta",
+        rules.megahit.output.scaffolds_fasta,
+        rules.metaspades.output.scaffolds_fasta
     output:
         filtered_fasta="results/samples/{sample}/assembly/{assembler}.filtered.fa"
     conda:
