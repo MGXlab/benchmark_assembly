@@ -26,58 +26,65 @@ samples_df = pd.read_csv(
 
 SAMPLES = samples_df.sample_id.to_list()
 
+ASSEMBLERS=config['assembly']
+
+
 def get_fastqs(wc):
     r1 = samples_df.loc[samples_df['sample_id'] == wc.sample]['R1'].values[0]
     r2 = samples_df.loc[samples_df['sample_id'] == wc.sample]['R2'].values[0]
     return list((r1,r2))
 
-def get_assembly(wc):
-    sample=wc.sample
-    if wc.assembler=='metaspades':
-        return os.path.join(root_dir, f"results/{sample}/assembly/metaspades/scaffolds.fasta")
-    else:
-        return os.path.join(root_dir, f"results/{sample}/assembly/megahit/final.contigs.fa")
+#def get_assembly(wc):
+#    sample=wc.sample
+#    if wc.assembler=='metaspades':
+#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/metaspades/{sample}.scaffolds.fasta")
+#    else:
+#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/megahit/{sample}.scaffolds.fasta")
 
 rule all:
     input:
         expand([
             # Assembly
-            "results/{sample}/assembly/metaspades/scaffolds.fasta",
-            "results/{sample}/assembly/megahit/final.contigs.fa",
-            "results/{sample}/assembly/{assembler}.time.txt",
-            "results/{sample}/assembly/{assembler}.mem.txt",
-            "results/{sample}/assembly/quast_{assembler}/report.tsv",
+            #"results/samples/{sample}/assembly/metaspades/scaffolds.fasta",
+            "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta",
+            "results/samples/{sample}/assembly/{assembler}/{assembler}.time.txt",
+            "results/samples/{sample}/assembly/{assembler}/{assembler}.mem.txt",
+            "results/samples/{sample}/assembly/quast_{assembler}/report.tsv",
+            "results/samples/{sample}/assembly/{assembler}.filtered_contigs.bed",
             # Mapping
-            "results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
-            "results/{sample}/mapping/{sample}_{assembler}.bam",
-            "results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
-            "results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+            "results/samples/{sample}/mapping/{sample}_{assembler}.bam",
+            "results/samples/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
+            "results/samples/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+            "results/samples/{sample}/mapping/{sample}.filtered.{assembler}.bam",
             # CAT
-            "results/{sample}/assembly/{assembler}.filtered.fa",
-            "results/{sample}/CAT/{assembler}/{sample}.summary.txt",
+            "results/samples/{sample}/assembly/{assembler}.filtered.fa",
+            "results/samples/{sample}/CAT/{assembler}/{sample}.summary.txt",
+            #RAT
+            "results/samples/{sample}/RAT/{assembler}/{sample}.complete.abundance.txt" ,
+            "results/RAT_krona.html",
             # Reporting
-            "results/runtime_stats/{sample}_usage.html",
+            #"results/runtime_stats/{sample}_usage.html",
             "results/multiqc_report.html",
             "results/benchmarks/aggregated/all.tsv",
             "results/benchmarks/aggregated/s.svg",
             "results/benchmarks/aggregated/io_out.svg",
             "results/benchmarks/aggregated/max_rss.svg",
             "results/benchmarks/aggregated/cpu_time.svg",
-            "results/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
+            "results/samples/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
             "results/krona.html",
             "results/.report.done",
             ],
             sample=SAMPLES,
-            assembler=['metaspades', 'megahit']
+            assembler=ASSEMBLERS
             )
 
 rule metaspades:
     input:
         fqs = get_fastqs
     output:
-        scaffolds_fasta = "results/{sample}/assembly/metaspades/scaffolds.fasta",
-        time_txt = "results/{sample}/assembly/metaspades.time.txt",
-        usage_txt = "results/{sample}/assembly/metaspades.mem.txt",
+        scaffolds_fasta = "results/samples/{sample}/assembly/metaspades/{sample}.scaffolds.fasta",
+        time_txt = "results/samples/{sample}/assembly/metaspades/metaspades.time.txt",
+        usage_txt = "results/samples/{sample}/assembly/metaspades/metaspades.mem.txt",
     log: 
         stdout = "results/logs/{sample}.metaspades.stdout",
         stderr = "results/logs/{sample}.metaspades.stderr"
@@ -87,7 +94,7 @@ rule metaspades:
         mem_mb=MAX_MEM_MB
     params:
         max_mem = MAX_MEM_GB,
-        outdir = "results/{sample}/assembly/metaspades",
+        outdir = "results/samples/{sample}/assembly/metaspades",
         ps_interval = config.get('ps_interval', 300)
     shell:
         '''
@@ -103,6 +110,7 @@ rule metaspades:
             ps -o pid,user,rss,command | grep spades >> {output.usage_txt}
             sleep {params.ps_interval}
         done
+        mv {params.outdir}/scaffolds.fasta {output.scaffolds_fasta}
         rm -rfv {params.outdir}/K* 1>>{log.stdout}
         '''
 
@@ -110,9 +118,9 @@ rule megahit:
     input:
         fqs = get_fastqs
     output:
-        contigs_fasta = "results/{sample}/assembly/megahit/final.contigs.fa",
-        time_txt = "results/{sample}/assembly/megahit.time.txt",
-        usage_txt = "results/{sample}/assembly/megahit.mem.txt"
+        scaffolds_fasta = "results/samples/{sample}/assembly/megahit/{sample}.scaffolds.fasta",
+        time_txt = "results/samples/{sample}/assembly/megahit/megahit.time.txt",
+        usage_txt = "results/samples/{sample}/assembly/megahit/megahit.mem.txt"
     log: 
         stdout = "results/logs/{sample}.megahit.stdout",
         stderr = "results/logs/{sample}.megahit.stderr"
@@ -122,7 +130,7 @@ rule megahit:
         mem_mb = MAX_MEM_MB
     params:
         mem = MAX_MEM_B,
-        outdir = "results/{sample}/assembly/megahit",
+        outdir = "results/samples/{sample}/assembly/megahit",
         prefix = "final",
         ps_interval = config.get('ps_interval', 300)
     shell:
@@ -140,16 +148,15 @@ rule megahit:
             ps -o pid,user,rss,command | grep megahit >> {output.usage_txt}
             sleep {params.ps_interval}
         done
-        mv {params.outdir}_tmp/final.contigs.fa {output.contigs_fasta}
+        mv {params.outdir}_tmp/final.contigs.fa {output.scaffolds_fasta}
         rm -rvf {params.outdir}_tmp/intermediate_contigs 1>>{log.stdout}
         '''
 
 rule quast:
     input:
-        rules.metaspades.output.scaffolds_fasta,
-        rules.megahit.output.contigs_fasta,
+        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta"
     output:
-        report_tsv="results/{sample}/assembly/quast_{assembler}/report.tsv"
+        report_tsv="results/samples/{sample}/assembly/quast_{assembler}/report.tsv"
     conda: 
         "envs/quast.yaml"
     log:
@@ -158,22 +165,20 @@ rule quast:
     threads: 16
     benchmark: "results/benchmarks/{sample}.quast_{assembler}.tsv"
     params:
-        outdir="results/{sample}/assembly/quast_{assembler}",
-        assembly=get_assembly
+        outdir="results/samples/{sample}/assembly/quast_{assembler}",
     shell:
         """
         quast -t {threads} -o {params.outdir} \
         --no-html --no-icarus \
-        {params.assembly} 1>{log.stdout} 2>{log.stderr}
+        {input.scaffolds_fasta} 1>{log.stdout} 2>{log.stderr}
         """
 
 rule bwa_index:
     input:
-        rules.metaspades.output.scaffolds_fasta,
-        rules.megahit.output.contigs_fasta,
+        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta"
     output:
-        linked_file="results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
-        index_files = multiext("results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        index_files = multiext(
+                "results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}",
                 ".amb",".ann", ".bwt", ".pac", ".sa")
     conda:
         "envs/mapping.yaml"
@@ -181,13 +186,13 @@ rule bwa_index:
         stdout="results/logs/{sample}.bwa_index_{assembler}.stdout",
         stderr="results/logs/{sample}.bwa_index_{assembler}.stderr"
     params:
-        assembly=get_assembly
+        prefix="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}"
     benchmark:
         "results/benchmarks/{sample}.bwa_index_{assembler}.tsv"
     shell:
         """
-        ln -s {params.assembly} {output.linked_file} && \
-        bwa index {output.linked_file} 1>{log.stdout} 2>{log.stderr}
+        bwa index -p {params.prefix} \
+        {input.scaffolds_fasta} 1>{log.stdout} 2>{log.stderr}
         """
 
 
@@ -196,8 +201,8 @@ rule bwa_mem:
         fqs=get_fastqs,
         index_files = rules.bwa_index.output.index_files
     output:
-        bam="results/{sample}/mapping/{sample}_{assembler}.bam",
-        bam_index="results/{sample}/mapping/{sample}_{assembler}.bam.csi"
+        bam="results/samples/{sample}/mapping/{sample}_{assembler}.bam",
+        bam_index="results/samples/{sample}/mapping/{sample}_{assembler}.bam.csi"
     conda:
         "envs/mapping.yaml"
     log:
@@ -205,9 +210,9 @@ rule bwa_mem:
         samtools_stderr="results/logs/{sample}.samtools_sort_{assembler}.stderr"
     threads: 16 
     params:
-        index="results/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        index="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
         read_group=r"'@RG\tID:{sample}\tSM:{sample}'",
-        sort_prefix="results/{sample}/mapping/{sample}_{assembler}.tmp"
+        sort_prefix="results/samples/{sample}/mapping/{sample}_{assembler}.tmp"
     benchmark:
         "results/benchmarks/{sample}.bwa_mem_{assembler}.tsv"
     shell:
@@ -229,7 +234,7 @@ rule samtools_flagstat:
         bam=rules.bwa_mem.output.bam,
         bam_index=rules.bwa_mem.output.bam_index
     output:
-        flagstat="results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt"
+        flagstat="results/samples/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt"
     conda:
         "envs/mapping.yaml"
     log:
@@ -249,7 +254,7 @@ rule samtools_stats:
         bam=rules.bwa_mem.output.bam,
         bam_index=rules.bwa_mem.output.bam_index
     output:
-        stats="results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt"
+        stats="results/samples/{sample}/mapping/stats/{sample}_{assembler}.stats.txt"
     conda:
         "envs/mapping.yaml"
     log:
@@ -267,10 +272,9 @@ rule samtools_stats:
 
 rule size_filter:
     input:
-        rules.metaspades.output.scaffolds_fasta,
-        rules.megahit.output.contigs_fasta,
+        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta",
     output:
-        filtered_fasta="results/{sample}/assembly/{assembler}.filtered.fa"
+        filtered_fasta="results/samples/{sample}/assembly/{assembler}.filtered.fa"
     conda:
         "envs/assembly.yaml"
     log:
@@ -279,13 +283,61 @@ rule size_filter:
         "results/benchmarks/{sample}.filter_{assembler}.tsv"
     params:
         min_length=1500,
-        assembly=get_assembly
     shell:
         """
         seqtk seq \
         -L {params.min_length} \
-        {params.assembly} > {output.filtered_fasta} 2>{log.stderr}
+        {input.scaffolds_fasta} > {output.filtered_fasta} 2>{log.stderr}
         """
+
+rule samtools_faidx_filtered_assembly:
+    input:
+        fa=rules.size_filter.output.filtered_fasta
+    output:
+        faidx="results/samples/{sample}/assembly/{assembler}.filtered.fa.fai"
+    conda:
+        "envs/mapping.yaml"
+    threads: 1
+    log:
+        stderr = "results/logs/{sample}.faidx_filtered_assembly_{assembler}.stderr"
+    shell:
+        """
+        samtools faidx {input.fa}
+        """
+
+rule faidx_to_bed:
+    input:
+        faidx=rules.samtools_faidx_filtered_assembly.output.faidx
+    output:
+        contigs_bed="results/samples/{sample}/assembly/{assembler}.filtered_contigs.bed"
+    conda:
+        "envs/mapping.yaml"
+    shell:
+        """
+        awk 'BEGIN {{FS="\t"}}; \
+        {{print $1 FS "1" FS $2}}' {input.faidx} > {output.contigs_bed}
+        """
+
+rule filter_bam:
+    input:
+        bam=rules.bwa_mem.output.bam,
+        contigs_bed=rules.faidx_to_bed.output.contigs_bed
+    output:
+        filtered_bam="results/samples/{sample}/mapping/{sample}.filtered.{assembler}.bam"
+    conda:
+        "envs/mapping.yaml"
+    threads: 4
+    log:
+        stderr="results/logs/{sample}_{assembler}.filter_bam.stderr"
+    shell:
+        """
+        samtools view -u -L {input.contigs_bed} {input.bam} \
+        | samtools sort --threads {threads} \
+        --write-index \
+        -O bam \
+        -o {output.filtered_bam} 2>{log.stderr}
+        """
+
 
 rule cat_contigs:
     input:
@@ -293,7 +345,7 @@ rule cat_contigs:
         cat_db=config["CAT_DB"],
         cat_taxonomy=config["CAT_TAX"]
     output:
-        cont2class="results/{sample}/CAT/{assembler}/{sample}.contig2classification.txt",
+        cont2class="results/samples/{sample}/CAT/{assembler}/{sample}.contig2classification.txt",
     conda:
         "envs/cat.yaml"
     log:
@@ -303,8 +355,8 @@ rule cat_contigs:
         "results/benchmarks/{sample}.cat_contigs_{assembler}.tsv"
     threads: 16
     params:
-        outdir="results/{sample}/CAT/{assembler}",
-        out_prefix="results/{sample}/CAT/{assembler}/{sample}"
+        outdir="results/samples/{sample}/CAT/{assembler}",
+        out_prefix="results/samples/{sample}/CAT/{assembler}/{sample}"
     shell:
         """
         mkdir -p {params.outdir}
@@ -324,8 +376,8 @@ rule cat_to_krona_txt:
         cont2class=rules.cat_contigs.output.cont2class,
         names_dmp=os.path.join(config["CAT_TAX"], "names.dmp")
     output:
-        krona_txt="results/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
-        contig_counts="results/{sample}/CAT/{assembler}/{sample}.cat_to_krona.txt"
+        krona_txt="results/samples/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
+        contig_counts="results/samples/{sample}/CAT/{assembler}/{sample}.cat_to_krona.txt"
     conda:
         "envs/krona.yaml"
     params:
@@ -339,11 +391,60 @@ rule cat_to_krona_txt:
         --include-stars 1>{output.contig_counts}
         """
 
+rule rat:
+    input:
+        scaffolds=rules.size_filter.output.filtered_fasta,
+        c2c=rules.cat_contigs.output.cont2class,
+        filtered_bam=rules.filter_bam.output.filtered_bam,
+    output:
+        complete_txt="results/samples/{sample}/RAT/{assembler}/{sample}.complete.abundance.txt" ,
+        reads_txt="results/samples/{sample}/RAT/{assembler}/{sample}.read2classification.txt" 
+    conda:
+        "envs/cat.yaml"
+    log:
+        stderr="results/logs/{sample}.{assembler}.RAT.stderr",
+        stdout="results/logs/{sample}.{assembler}.RAT.stdout"
+    params:
+        cat_exe=config['CAT_DEV'],
+        cat_tax=config['CAT_TAX'],
+        outdir="results/samples/{sample}/RAT/{assembler}",
+        out_prefix="results/samples/{sample}/RAT/{assembler}/{sample}"
+    shell:
+        """
+        mkdir -p {params.outdir}
+        {params.cat_exe} reads \
+        -c {input.scaffolds} \
+        --c2c {input.c2c} \
+        -t {params.cat_tax} \
+        --bam1 {input.filtered_bam} \
+        -o {params.out_prefix} 1>{log.stdout} 2>{log.stdout}
+        """
+
+rule rat_to_krona:
+    input:
+        complete_tsv=rules.rat.output.complete_txt,
+        names_dmp=os.path.join(config["CAT_TAX"], "names.dmp")
+    output:
+        krona_txt="results/samples/{sample}/RAT/{assembler}/{sample}.{assembler}.krona.txt",
+    conda:
+        "envs/krona.yaml"
+    params:
+        scrpt = srcdir("scripts/rat_to_krona.py")
+    shell:
+        """
+        python {params.scrpt} \
+        -i {input.complete_tsv} \
+        -n {input.names_dmp} \
+        -o {output.krona_txt} \
+        --include-stars 
+        """
+
+
 rule krona_plot:
     input:
-        expand("results/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
+        expand("results/samples/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
                 sample=SAMPLES,
-                assembler=['megahit', 'metaspades']
+                assembler=['megahit',]
         )
     output:
        report("results/krona.html",
@@ -359,12 +460,31 @@ rule krona_plot:
         """
 
 
+rule rat_krona_plot:
+    input:
+        expand("results/samples/{sample}/RAT/{assembler}/{sample}.{assembler}.krona.txt",
+                sample=SAMPLES,
+                assembler=['megahit']
+        )
+    output:
+       report("results/RAT_krona.html",
+               category="Results",
+               subcategory="Taxonomy",
+               caption="report/aggregated_rat_krona.rst"
+               )
+    conda:
+        "envs/krona.yaml"
+    shell:
+        """
+        ktImportText {input} -o {output}
+        """
+
 rule cat_names:
     input:
         cont2class=rules.cat_contigs.output.cont2class,
         cat_taxonomy=config["CAT_TAX"]
     output:
-        classwnames="results/{sample}/CAT/{assembler}/{sample}.official_names.txt"
+        classwnames="results/samples/{sample}/CAT/{assembler}/{sample}.official_names.txt"
     conda:
         "envs/cat.yaml"
     log:
@@ -387,7 +507,7 @@ rule cat_summary:
         scaffolds=rules.size_filter.output.filtered_fasta,
         classwnames=rules.cat_names.output.classwnames
     output:
-        summary="results/{sample}/CAT/{assembler}/{sample}.summary.txt"
+        summary="results/samples/{sample}/CAT/{assembler}/{sample}.summary.txt"
     conda:
         "envs/cat.yaml"
     log:
@@ -407,8 +527,8 @@ rule cat_summary:
 
 rule plot_runstats:
     input:
-        metaspades_time=rules.metaspades.output.time_txt,
-        metaspades_usage=rules.metaspades.output.usage_txt,
+        #metaspades_time=rules.metaspades.output.time_txt,
+        #metaspades_usage=rules.metaspades.output.usage_txt,
         megahit_time=rules.megahit.output.time_txt,
         megahit_usage=rules.megahit.output.usage_txt
     output:
@@ -420,7 +540,7 @@ rule plot_runstats:
         "envs/plot.yaml"
     threads: 1
     params:
-        data_dir="results/{sample}/assembly",
+        data_dir="results/samples/{sample}/assembly",
         scrpt=srcdir("scripts/plot_assembly_stats.py")
     shell:
         """
@@ -431,12 +551,12 @@ rule plot_runstats:
 rule multiqc_report:
     input:
         expand([
-        "results/{sample}/assembly/quast_{assembler}/report.tsv",
-        "results/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
-        "results/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
-        "results/{sample}/CAT/{sample}/{sample}.summary.txt"
+        "results/samples/{sample}/assembly/quast_{assembler}/report.tsv",
+        "results/samples/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
+        "results/samples/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
+        "results/samples/{sample}/CAT/{sample}/{sample}.summary.txt"
         ], 
-        sample=SAMPLES, assembler=['megahit', 'metaspades']
+        sample=SAMPLES, assembler=['megahit']
         )
     output:
         report("results/multiqc_report.html",
@@ -514,7 +634,8 @@ rule plot_benchmarks:
 rule make_report_dir:
     input:
         rules.multiqc_report.output[0],
-        rules.krona_plot.output
+        rules.krona_plot.output,
+        rules.rat_krona_plot.output
     output:
         touch("results/.report.done")
     shell:
@@ -522,5 +643,6 @@ rule make_report_dir:
         mkdir -p report/results
         cp results/multiqc_report.html report/results/
         cp results/krona.html report/results
+        cp results/RAT_krona.html report/results
         cp -r results/runtime_stats report/
         """
