@@ -210,7 +210,7 @@ rule bwa_mem:
         samtools_stderr="results/logs/{sample}.samtools_sort_{assembler}.stderr"
     threads: 16 
     params:
-        index="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        index="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}",
         read_group=r"'@RG\tID:{sample}\tSM:{sample}'",
         sort_prefix="results/samples/{sample}/mapping/{sample}_{assembler}.tmp"
     benchmark:
