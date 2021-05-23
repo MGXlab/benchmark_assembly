@@ -644,5 +644,5 @@ rule make_report_dir:
         cp results/multiqc_report.html report/results/
         cp results/krona.html report/results
         cp results/RAT_krona.html report/results
-        cp -r results/runtime_stats report/
+        #cp -r results/runtime_stats report/
         """
