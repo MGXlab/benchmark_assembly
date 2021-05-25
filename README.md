@@ -7,7 +7,8 @@
 You need conda.
 
 ```
-$ git clone
+$ git clone git@github.com:MGXlab/benchmark_assembly.git
+$ cd benchmark_assembly
 $ conda env create -n bass -f=environment.yml
 $ conda activate bass
 
