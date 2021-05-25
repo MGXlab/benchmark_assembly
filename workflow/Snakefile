@@ -34,12 +34,6 @@ def get_fastqs(wc):
     r2 = samples_df.loc[samples_df['sample_id'] == wc.sample]['R2'].values[0]
     return list((r1,r2))
 
-#def get_assembly(wc):
-#    sample=wc.sample
-#    if wc.assembler=='metaspades':
-#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/metaspades/{sample}.scaffolds.fasta")
-#    else:
-#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/megahit/{sample}.scaffolds.fasta")
 
 rule all:
     input:
@@ -63,7 +57,7 @@ rule all:
             "results/samples/{sample}/RAT/{assembler}/{sample}.complete.abundance.txt" ,
             "results/RAT_krona.html",
             # Reporting
-            #"results/runtime_stats/{sample}_usage.html",
+            "results/runtime_stats/{sample}_usage.html",
             "results/multiqc_report.html",
             "results/benchmarks/aggregated/all.tsv",
             "results/benchmarks/aggregated/s.svg",
