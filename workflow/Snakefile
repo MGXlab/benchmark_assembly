@@ -34,12 +34,6 @@ def get_fastqs(wc):
     r2 = samples_df.loc[samples_df['sample_id'] == wc.sample]['R2'].values[0]
     return list((r1,r2))
 
-#def get_assembly(wc):
-#    sample=wc.sample
-#    if wc.assembler=='metaspades':
-#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/metaspades/{sample}.scaffolds.fasta")
-#    else:
-#        return os.path.join(root_dir, f"results/samples/{sample}/assembly/megahit/{sample}.scaffolds.fasta")
 
 rule all:
     input:
@@ -63,7 +57,7 @@ rule all:
             "results/samples/{sample}/RAT/{assembler}/{sample}.complete.abundance.txt" ,
             "results/RAT_krona.html",
             # Reporting
-            #"results/runtime_stats/{sample}_usage.html",
+            "results/runtime_stats/{sample}_usage.html",
             "results/multiqc_report.html",
             "results/benchmarks/aggregated/all.tsv",
             "results/benchmarks/aggregated/s.svg",
@@ -210,7 +204,7 @@ rule bwa_mem:
         samtools_stderr="results/logs/{sample}.samtools_sort_{assembler}.stderr"
     threads: 16 
     params:
-        index="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}.fa",
+        index="results/samples/{sample}/mapping/{assembler}_index/{sample}_{assembler}",
         read_group=r"'@RG\tID:{sample}\tSM:{sample}'",
         sort_prefix="results/samples/{sample}/mapping/{sample}_{assembler}.tmp"
     benchmark:
@@ -272,7 +266,7 @@ rule samtools_stats:
 
 rule size_filter:
     input:
-        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta",
+        scaffolds_fasta = "results/samples/{sample}/assembly/{assembler}/{sample}.scaffolds.fasta"
     output:
         filtered_fasta="results/samples/{sample}/assembly/{assembler}.filtered.fa"
     conda:
@@ -554,7 +548,7 @@ rule multiqc_report:
         "results/samples/{sample}/assembly/quast_{assembler}/report.tsv",
         "results/samples/{sample}/mapping/stats/{sample}_{assembler}.flagstat.txt",
         "results/samples/{sample}/mapping/stats/{sample}_{assembler}.stats.txt",
-        "results/samples/{sample}/CAT/{sample}/{sample}.summary.txt"
+        "results/samples/{sample}/CAT/{assembler}/{sample}.summary.txt"
         ], 
         sample=SAMPLES, assembler=['megahit']
         )
@@ -644,5 +638,5 @@ rule make_report_dir:
         cp results/multiqc_report.html report/results/
         cp results/krona.html report/results
         cp results/RAT_krona.html report/results
-        cp -r results/runtime_stats report/
+        #cp -r results/runtime_stats report/
         """
