@@ -15,6 +15,15 @@ $ conda activate bass
 (bass)$ snakemake --use-conda --conda-frontend mamba -j 32
 ```
 
+# Disclaimer
+
+This is purely an experimental pipeline, glued together to get an idea about 
+technical benchmarks. If you are looking for complete solutions for analysing 
+metagenomes take a look at: 
+
+- [nf-core/mag](https://nf-co.re/mag)
+- [metagenome-atlas](https://github.com/metagenome-atlas/atlas)
+
 # Description
 
 No trimming/adapter removal is done for now.
