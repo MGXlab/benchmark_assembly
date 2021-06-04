@@ -57,13 +57,13 @@ rule all:
             "results/samples/{sample}/RAT/{assembler}/{sample}.complete.abundance.txt" ,
             "results/RAT_krona.html",
             # Reporting
-            "results/runtime_stats/{sample}_usage.html",
-            "results/multiqc_report.html",
-            "results/benchmarks/aggregated/all.tsv",
-            "results/benchmarks/aggregated/s.svg",
-            "results/benchmarks/aggregated/io_out.svg",
-            "results/benchmarks/aggregated/max_rss.svg",
-            "results/benchmarks/aggregated/cpu_time.svg",
+            #"results/runtime_stats/{sample}_usage.html",
+            #"results/multiqc_report.html",
+            #"results/benchmarks/aggregated/all.tsv",
+            #"results/benchmarks/aggregated/s.svg",
+            #"results/benchmarks/aggregated/io_out.svg",
+            #"results/benchmarks/aggregated/max_rss.svg",
+            #"results/benchmarks/aggregated/cpu_time.svg",
             "results/samples/{sample}/CAT/{assembler}/{sample}.{assembler}.krona.txt",
             "results/krona.html",
             "results/.report.done",
@@ -119,11 +119,8 @@ rule megahit:
         stdout = "results/logs/{sample}.megahit.stdout",
         stderr = "results/logs/{sample}.megahit.stderr"
     conda: "envs/assembly.yaml"
-    threads: 32
-    resources:
-        mem_mb = MAX_MEM_MB
+    threads: 8
     params:
-        mem = MAX_MEM_B,
         outdir = "results/samples/{sample}/assembly/megahit",
         prefix = "final",
         ps_interval = config.get('ps_interval', 300)
@@ -132,7 +129,6 @@ rule megahit:
         /usr/bin/time -f"%E %M" -o {output.time_txt} \
         megahit -1 {input.fqs[0]} -2 {input.fqs[1]} \
         -t {threads} \
-        -m {params.mem} \
         --continue \
         --out-prefix {params.prefix} \
         -o {params.outdir}_tmp 1>{log.stdout} 2>{log.stderr} &
