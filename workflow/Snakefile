@@ -58,7 +58,7 @@ rule all:
             "results/RAT_krona.html",
             # Reporting
             #"results/runtime_stats/{sample}_usage.html",
-            #"results/multiqc_report.html",
+            "results/multiqc_report.html",
             #"results/benchmarks/aggregated/all.tsv",
             #"results/benchmarks/aggregated/s.svg",
             #"results/benchmarks/aggregated/io_out.svg",
